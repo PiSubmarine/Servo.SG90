@@ -34,7 +34,8 @@ Always modify the original repository and update the TAG (if present) in PiSubma
 Usually, there is a local copy of the dependency in the directory above the source root.
 For example, if the current project is in C:\Projects\PiSubmarine\Drv8908, and it depends
 on https://github.com/PiSubmarine/Spi.Linux then a local authoritative copy of Spi.Linux is likely located in
-C:\Projects\PiSubmarine\Spi.Linux. If not found, ask for the correct local location.
+C:\Projects\PiSubmarine\Spi.Linux. If not found, ask for the correct local location. Do not assume that this local copy
+will be present in the future. Do not reference it directly, only use PiSubmarineAddDependency with GitHub URL to the dependency.
 
 Each module may depend on other PiSubmarine modules, as well as external libraries. Vcpkg manages external libraries.
 
@@ -215,5 +216,5 @@ In case that multi-threading is required, adhere to the following rules:
 - Do not use C-style code unless absolutely necessary.
 - Do not use unmanaged memory. Use smart pointers for owned memory, references for not-owned memory. Use raw pointers
   sparingly. Prefer static allocation.
-- Do not use std::cout, unless absolutely necessary. See logging cross-cutting concept.
+- Do not use iostream for logging, unless absolutely necessary. See logging cross-cutting concept.
 - Never use std::cin (or anything that introduces tight coupling) in src code.

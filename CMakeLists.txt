@@ -19,4 +19,5 @@ include("${pisubmarinebuild_SOURCE_DIR}/PiSubmarine.Build.CMake.cmake")
 
 PiSubmarineInitModule("")
 project(${PISUBMARINE_MODULE_NAME})
+enable_testing()
 PiSubmarineConfigureModule()
