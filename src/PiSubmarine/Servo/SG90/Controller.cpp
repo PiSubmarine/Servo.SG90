@@ -3,11 +3,13 @@
 #include <chrono>
 #include <cmath>
 
+#include "PiSubmarine/Error/Api/MakeError.h"
+
 namespace PiSubmarine::Servo::SG90
 {
     namespace
     {
-        using PwmError = PiSubmarine::PWM::Api::IDriver::Error;
+        using ErrorCondition = PiSubmarine::Error::Api::ErrorCondition;
 
         constexpr auto AllowedTargetAngleSector = AngularSector(Radians(0.0), Degrees(180.0).ToRadians());
         constexpr auto PwmFrequency = Hertz(50.0);
@@ -33,28 +35,27 @@ namespace PiSubmarine::Servo::SG90
             return {dutyCycle};
         }
 
-        [[nodiscard]] std::expected<void, Servo::Error> ConvertPwmResult(const PwmError error)
+        [[nodiscard]] PiSubmarine::Error::Api::Result<void> ConvertPwmResult(
+            PiSubmarine::Error::Api::Result<void> pwmResult)
         {
-            switch (error)
+            if (pwmResult.has_value())
             {
-            case PwmError::Ok:
-            case PwmError::Disabled:
                 return {};
-
-            case PwmError::Busy:
-                return std::unexpected(Servo::Error::Timeout);
-
-            case PwmError::InvalidArgument:
-            case PwmError::UnsupportedParameter:
-                return std::unexpected(Servo::Error::HardwareUnavailable);
-
-            case PwmError::ProtocolError:
-            case PwmError::IoFailure:
-            case PwmError::UnknownError:
-                return std::unexpected(Servo::Error::CommunicationFailure);
             }
 
-            return std::unexpected(Servo::Error::CommunicationFailure);
+            const auto& error = pwmResult.error();
+            switch (error.Condition)
+            {
+            case ErrorCondition::ContractError:
+                return std::unexpected(PiSubmarine::Error::Api::MakeError(ErrorCondition::DeviceError, error.Cause));
+
+            case ErrorCondition::CommunicationError:
+            case ErrorCondition::DeviceError:
+            case ErrorCondition::UnknownError:
+                return std::unexpected(error);
+            }
+
+            return std::unexpected(PiSubmarine::Error::Api::MakeError(ErrorCondition::UnknownError));
         }
     }
 
@@ -63,11 +64,11 @@ namespace PiSubmarine::Servo::SG90
     {
     }
 
-    std::expected<void, Error> Controller::SetTargetAngle(const Radians angle)
+    PiSubmarine::Error::Api::Result<void> Controller::SetTargetAngle(const Radians angle)
     {
         if (!IsAllowedTargetAngle(angle))
         {
-            return std::unexpected(Error::TargetAngleOutOfRange);
+            return std::unexpected(PiSubmarine::Error::Api::MakeError(ErrorCondition::ContractError));
         }
 
         m_TargetAngle = angle;
@@ -84,7 +85,7 @@ namespace PiSubmarine::Servo::SG90
         return AllowedTargetAngleSector;
     }
 
-    std::expected<void, Error> Controller::SetEnabled(const bool isEnabled)
+    PiSubmarine::Error::Api::Result<void> Controller::SetEnabled(const bool isEnabled)
     {
         if (isEnabled)
         {
@@ -98,12 +99,12 @@ namespace PiSubmarine::Servo::SG90
         return ConvertPwmResult(m_PwmDriver.SetEnabled(isEnabled));
     }
 
-    bool Controller::IsEnabled() const
+    PiSubmarine::Error::Api::Result<bool> Controller::IsEnabled() const
     {
         return m_PwmDriver.IsEnabled();
     }
 
-    std::expected<void, Error> Controller::ApplyTargetSignal() const
+    PiSubmarine::Error::Api::Result<void> Controller::ApplyTargetSignal() const
     {
         return ConvertPwmResult(m_PwmDriver.SetFrequencyAndDuty(PwmFrequency, ConvertAngleToDutyCycle(m_TargetAngle)));
     }

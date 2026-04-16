@@ -3,6 +3,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "PiSubmarine/Error/Api/MakeError.h"
 #include "PiSubmarine/PWM/Api/IDriverMock.h"
 #include "PiSubmarine/Servo/SG90/Controller.h"
 
@@ -10,7 +11,7 @@ namespace PiSubmarine::Servo::SG90
 {
     namespace
     {
-        using PwmError = PiSubmarine::PWM::Api::IDriver::Error;
+        using ErrorCondition = PiSubmarine::Error::Api::ErrorCondition;
 
         [[nodiscard]] bool IsClose(const double actual, const double expected)
         {
@@ -37,7 +38,7 @@ namespace PiSubmarine::Servo::SG90
         const auto result = controller.SetTargetAngle(Radians(-0.001));
 
         ASSERT_FALSE(result.has_value());
-        EXPECT_EQ(result.error(), Error::TargetAngleOutOfRange);
+        EXPECT_EQ(result.error().Condition, ErrorCondition::ContractError);
     }
 
     TEST(ControllerTest, RejectsAngleAboveAllowedSectorWithoutWraparound)
@@ -48,7 +49,7 @@ namespace PiSubmarine::Servo::SG90
         const auto result = controller.SetTargetAngle(Degrees(181.0).ToRadians());
 
         ASSERT_FALSE(result.has_value());
-        EXPECT_EQ(result.error(), Error::TargetAngleOutOfRange);
+        EXPECT_EQ(result.error().Condition, ErrorCondition::ContractError);
     }
 
     TEST(ControllerTest, MapsMinimumAngleToSg90MinimumDutyCycle)
@@ -61,7 +62,7 @@ namespace PiSubmarine::Servo::SG90
             SetFrequencyAndDuty(
                 testing::Truly([](const Hertz frequency) { return IsClose(frequency.Value, 50.0); }),
                 testing::Truly([](const NormalizedFraction dutyCycle) { return IsClose(static_cast<double>(dutyCycle), 0.025); })))
-            .WillOnce(testing::Return(PwmError::Ok));
+            .WillOnce(testing::Return(PiSubmarine::Error::Api::Result<void>{}));
 
         const auto result = controller.SetTargetAngle(Radians(0.0));
 
@@ -75,7 +76,7 @@ namespace PiSubmarine::Servo::SG90
         Controller controller(pwmDriver);
 
         EXPECT_CALL(pwmDriver, SetFrequencyAndDuty(testing::_, testing::_))
-            .WillOnce(testing::Return(PwmError::Disabled));
+            .WillOnce(testing::Return(PiSubmarine::Error::Api::Result<void>{}));
 
         const auto result = controller.SetTargetAngle(Degrees(45.0).ToRadians());
 
@@ -92,9 +93,9 @@ namespace PiSubmarine::Servo::SG90
             testing::InSequence sequence;
 
             EXPECT_CALL(pwmDriver, SetFrequencyAndDuty(testing::_, testing::_))
-                .WillOnce(testing::Return(PwmError::Disabled));
+                .WillOnce(testing::Return(PiSubmarine::Error::Api::Result<void>{}));
             EXPECT_CALL(pwmDriver, SetEnabled(true))
-                .WillOnce(testing::Return(PwmError::Ok));
+                .WillOnce(testing::Return(PiSubmarine::Error::Api::Result<void>{}));
         }
 
         const auto result = controller.SetEnabled(true);
@@ -102,7 +103,7 @@ namespace PiSubmarine::Servo::SG90
         ASSERT_TRUE(result.has_value());
     }
 
-    TEST(ControllerTest, MapsBusyEnableFailureToTimeout)
+    TEST(ControllerTest, MapsPwmContractFailureToDeviceError)
     {
         testing::StrictMock<PiSubmarine::PWM::Api::IDriverMock> pwmDriver;
         Controller controller(pwmDriver);
@@ -111,15 +112,14 @@ namespace PiSubmarine::Servo::SG90
             testing::InSequence sequence;
 
             EXPECT_CALL(pwmDriver, SetFrequencyAndDuty(testing::_, testing::_))
-                .WillOnce(testing::Return(PwmError::Disabled));
-            EXPECT_CALL(pwmDriver, SetEnabled(true))
-                .WillOnce(testing::Return(PwmError::Busy));
+                .WillOnce(testing::Return(std::unexpected(
+                    PiSubmarine::Error::Api::MakeError(ErrorCondition::ContractError))));
         }
 
         const auto result = controller.SetEnabled(true);
 
         ASSERT_FALSE(result.has_value());
-        EXPECT_EQ(result.error(), Error::Timeout);
+        EXPECT_EQ(result.error().Condition, ErrorCondition::DeviceError);
     }
 
     TEST(ControllerTest, DelegatesEnabledStateToPwmDriver)
@@ -128,8 +128,10 @@ namespace PiSubmarine::Servo::SG90
         Controller controller(pwmDriver);
 
         EXPECT_CALL(pwmDriver, IsEnabled())
-            .WillOnce(testing::Return(true));
+            .WillOnce(testing::Return(PiSubmarine::Error::Api::Result<bool>(true)));
 
-        EXPECT_TRUE(controller.IsEnabled());
+        const auto result = controller.IsEnabled();
+        ASSERT_TRUE(result.has_value());
+        EXPECT_TRUE(result.value());
     }
 }

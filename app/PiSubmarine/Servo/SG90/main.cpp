@@ -9,6 +9,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include "PiSubmarine/Error/Api/Error.h"
 #include "PiSubmarine/PWM/Linux/Driver.h"
 #include "PiSubmarine/Servo/SG90/Controller.h"
 
@@ -24,24 +25,34 @@ namespace PiSubmarine::Servo::SG90
             return logger;
         }
 
-        [[nodiscard]] std::string ToString(const Servo::Error error)
+        [[nodiscard]] std::string ToString(const PiSubmarine::Error::Api::Error& error)
         {
-            switch (error)
+            std::string message;
+            switch (error.Condition)
             {
-            case Servo::Error::TargetAngleOutOfRange:
-                return "Target angle is outside the SG90 range [0, 180] degrees.";
+            case PiSubmarine::Error::Api::ErrorCondition::ContractError:
+                message = "Requested servo operation violates the API contract.";
+                break;
 
-            case Servo::Error::HardwareUnavailable:
-                return "PWM hardware rejected the requested SG90 signal parameters.";
+            case PiSubmarine::Error::Api::ErrorCondition::CommunicationError:
+                message = "Failed to communicate with the PWM controller.";
+                break;
 
-            case Servo::Error::CommunicationFailure:
-                return "Failed to communicate with the PWM controller.";
+            case PiSubmarine::Error::Api::ErrorCondition::DeviceError:
+                message = "PWM hardware rejected or could not apply the SG90 signal.";
+                break;
 
-            case Servo::Error::Timeout:
-                return "PWM controller did not become ready in time.";
+            case PiSubmarine::Error::Api::ErrorCondition::UnknownError:
+                message = "Unknown servo error.";
+                break;
             }
 
-            return "Unknown servo error.";
+            if (error.HasCause())
+            {
+                message += " Cause: " + error.Cause.message();
+            }
+
+            return message;
         }
     }
 }
@@ -86,7 +97,7 @@ int main(const int argc, const char* const argv[])
             return EXIT_FAILURE;
         }
 
-        PiSubmarine::PWM::Linux::Driver pwmDriver(pwmChannelPath);
+        PiSubmarine::PWM::Linux::Driver pwmDriver(pwmChannelPath, std::chrono::milliseconds(10), 100);
         PiSubmarine::Servo::SG90::Controller controller(pwmDriver);
 
         if (disable)
